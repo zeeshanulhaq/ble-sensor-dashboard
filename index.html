@@ -57,6 +57,8 @@
   .row3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 4px; }
   .row3 .value { font-size: 1.5rem; }
   label.opt { color: var(--muted); font-size: .85rem; display: flex; align-items: center; gap: 6px; }
+  #log { max-width: 760px; margin: 0 auto 8px; padding: 10px 16px; font: 12px/1.5 ui-monospace, Menlo, Consolas, monospace;
+         color: var(--muted); white-space: pre-wrap; word-break: break-word; }
   footer { max-width: 760px; margin: 0 auto; padding: 0 16px 24px; color: var(--muted); font-size: .8rem; }
 </style>
 </head>
@@ -94,6 +96,7 @@
   <h2>Analog input</h2>
   <div class="card"><div class="label">ADC (AIN5)</div><div class="value na" id="adc">—</div><div class="age" id="adc-age"></div></div>
 </main>
+<pre id="log"></pre>
 <footer>Values show “—” when the matching sensor board isn't plugged in. Resistances are raw sensor Rs; ppm needs a calibrated clean-air baseline.</footer>
 
 <script>
@@ -116,6 +119,16 @@ const UUID = {
 };
 
 const $ = id => document.getElementById(id);
+
+const LF = String.fromCharCode(10);
+
+function log(msg) {
+  const el = $("log");
+  const t = new Date().toTimeString().slice(0, 8);
+  const lines = [t + "  " + msg].concat(el.textContent ? el.textContent.split(LF) : []);
+  el.textContent = lines.slice(0, 14).join(LF);
+  console.log(msg);
+}
 const lastSeen = {};   // element id -> timestamp
 
 let device = null;
@@ -191,7 +204,7 @@ async function watch(server, svcUuid, chUuid, parse, label) {
     try { parse(await ch.readValue()); } catch (e) { /* first read is optional */ }
     await ch.startNotifications();
   } catch (e) {
-    console.warn("Could not subscribe to " + label + ":", e);
+    log("No " + label + ": " + e.name + ": " + e.message);
   }
 }
 
@@ -239,6 +252,12 @@ function scheduleReconnect(delayMs) {
 }
 
 async function connect() {
+  log("Connect tapped");
+  setStatus("Opening device chooser…", "busy");
+  try {
+    log("secure context: " + window.isSecureContext + ", Bluetooth available: " +
+        (await navigator.bluetooth.getAvailability()));
+  } catch (e) { log("availability check failed: " + e.name + ": " + e.message); }
   const options = {
     optionalServices: [UUID.ess, UUID.gas, UUID.accel, UUID.adc],
   };
@@ -248,14 +267,21 @@ async function connect() {
   try {
     device = await navigator.bluetooth.requestDevice(options);
   } catch (e) {
-    if (e.name !== "NotFoundError") setStatus("Error: " + e.message, "err");
-    else setStatus("Not connected");
+    log("requestDevice: " + e.name + ": " + e.message);
+    if (e.name === "NotFoundError") {
+      setStatus("No device chosen. If the list was empty: turn on Bluetooth and Location, " +
+                "disconnect other apps from the board, or tick “show all devices”.", "err");
+    } else {
+      setStatus("Error: " + e.name + ": " + e.message, "err");
+    }
     return;
   }
+  log("Selected: " + (device.name || device.id));
   wantConnected = true;
   device.addEventListener("gattserverdisconnected", onDisconnected);
   try { await connectGatt(); }
   catch (e) {
+    log("GATT connect: " + e.name + ": " + e.message);
     setStatus("Connect failed: " + e.message, "err");
     scheduleReconnect(2000);
   }
@@ -284,6 +310,7 @@ function ago(t) {
 // ---- Start ------------------------------------------------------------------
 if (!navigator.bluetooth) {
   $("unsupported").style.display = "block";
+  log("navigator.bluetooth is missing (secure context: " + window.isSecureContext + ")");
   $("connectBtn").disabled = true;
 } else {
   $("connectBtn").addEventListener("click", connect);
