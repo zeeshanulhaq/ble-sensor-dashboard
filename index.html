@@ -73,6 +73,10 @@
 <div id="unsupported">Web Bluetooth isn't available here. Open this page in <b>Chrome on Android</b> (or desktop Chrome/Edge) over HTTPS.</div>
 
 <main>
+  <h2>Battery</h2>
+  <div class="card"><div class="label">Battery voltage</div><div class="value na" id="batv">—</div><div class="age" id="batv-age"></div></div>
+  <div class="card"><div class="label">Battery level (est.)</div><div class="value na" id="batl">—</div><div class="age" id="batl-age"></div></div>
+
   <h2>Environment</h2>
   <div class="card"><div class="label">Temperature</div><div class="value na" id="temp">—</div><div class="age" id="temp-age"></div></div>
   <div class="card"><div class="label">Humidity</div><div class="value na" id="humi">—</div><div class="age" id="humi-age"></div></div>
@@ -116,6 +120,9 @@ const UUID = {
   accelC:"6a520001-1234-5678-90ab-cdef01234567",
   adc:   "adc10000-1234-5678-90ab-cdef01234567",
   adcC:  "adc10001-1234-5678-90ab-cdef01234567",
+  bat:   "battery_service",
+  batL:  "battery_level",
+  batMv: "6a530001-1234-5678-90ab-cdef01234567",
 };
 
 const $ = id => document.getElementById(id);
@@ -162,6 +169,14 @@ function fmtOhm(v) {
 
 // ---- Characteristic parsers (firmware units) --------------------------------
 const parsers = {
+  batMv(dv) {
+    const raw = dv.getUint16(0, true);
+    raw === 0xffff ? setValue("batv", null) : setValue("batv", (raw / 1000).toFixed(2), "V");
+  },
+  batL(dv) {
+    const raw = dv.getUint8(0);
+    raw === 0xff ? setValue("batl", null) : setValue("batl", String(raw), "%");
+  },
   temp(dv) {
     const raw = dv.getInt16(0, true);
     raw === -32768 ? setValue("temp", null) : setValue("temp", (raw / 100).toFixed(2), "°C");
@@ -212,6 +227,8 @@ async function setupDevice() {
   setStatus("Reading services…", "busy");
   const server = device.gatt;
   // GATT operations are queued one at a time by the browser; keep them sequential.
+  await watch(server, UUID.bat, UUID.batMv, parsers.batMv, "battery voltage");
+  await watch(server, UUID.bat, UUID.batL, parsers.batL, "battery level");
   await watch(server, UUID.ess, UUID.temp, parsers.temp, "temperature");
   await watch(server, UUID.ess, UUID.humi, parsers.humi, "humidity");
   await watch(server, UUID.ess, UUID.co2, parsers.co2, "CO2");
@@ -259,7 +276,7 @@ async function connect() {
         (await navigator.bluetooth.getAvailability()));
   } catch (e) { log("availability check failed: " + e.name + ": " + e.message); }
   const options = {
-    optionalServices: [UUID.ess, UUID.gas, UUID.accel, UUID.adc],
+    optionalServices: [UUID.ess, UUID.gas, UUID.accel, UUID.adc, UUID.bat],
   };
   if ($("showAll").checked) options.acceptAllDevices = true;
   else options.filters = [{ services: [SMP_SERVICE] }];
@@ -296,7 +313,7 @@ function disconnect() {
 
 // ---- "x s ago" labels -------------------------------------------------------
 setInterval(() => {
-  for (const id of ["temp", "humi", "co2", "no2", "nh3", "co", "adc"]) {
+  for (const id of ["batv", "batl", "temp", "humi", "co2", "no2", "nh3", "co", "adc"]) {
     $(id + "-age").textContent = lastSeen[id] ? ago(lastSeen[id]) : "";
   }
   $("acc-age").textContent = lastSeen["acc-age"] ? ago(lastSeen["acc-age"]) : "";
