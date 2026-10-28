@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BLE Sensor</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #ffffff; --text: #1b1f24; --muted: #6b7380;
+    --line: #e1e4e9; --accent: #1565c0; --ok: #2e7d32; --warn: #b26a00; --bad: #c62828;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101318; --card: #1a1f27; --text: #e8ebf0; --muted: #8f99a8;
+      --line: #2a313c; --accent: #6ab0ff; --ok: #66bb6a; --warn: #ffb74d; --bad: #ef6c6c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    padding: 16px 16px 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px;
+    max-width: 760px; margin: 0 auto;
+  }
+  h1 { font-size: 1.25rem; margin: 0; flex: 1 1 auto; }
+  button {
+    font: inherit; font-weight: 600; border: 0; border-radius: 10px; padding: 10px 18px;
+    background: var(--accent); color: #fff; cursor: pointer; min-height: 44px;
+  }
+  button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--line); }
+  button:disabled { opacity: .5; cursor: default; }
+  #status {
+    max-width: 760px; margin: 0 auto; padding: 0 16px 8px; color: var(--muted); font-size: .9rem;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
+  .dot.on { background: var(--ok); } .dot.busy { background: var(--warn); } .dot.err { background: var(--bad); }
+  #unsupported {
+    display: none; max-width: 760px; margin: 8px auto; padding: 12px 16px; border-radius: 10px;
+    background: var(--card); border: 1px solid var(--bad); color: var(--bad);
+  }
+  main {
+    max-width: 760px; margin: 0 auto; padding: 8px 16px 32px;
+    display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+  .card.wide { grid-column: 1 / -1; }
+  .label { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+  .value { font-size: 2rem; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .value small { font-size: 1rem; font-weight: 500; color: var(--muted); margin-left: 4px; }
+  .value.na { color: var(--muted); }
+  .age { color: var(--muted); font-size: .75rem; margin-top: 2px; }
+  h2 { font-size: .85rem; margin: 6px 4px 0; color: var(--muted); text-transform: uppercase;
+       letter-spacing: .06em; grid-column: 1 / -1; }
+  .row3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 4px; }
+  .row3 .value { font-size: 1.5rem; }
+  label.opt { color: var(--muted); font-size: .85rem; display: flex; align-items: center; gap: 6px; }
+  footer { max-width: 760px; margin: 0 auto; padding: 0 16px 24px; color: var(--muted); font-size: .8rem; }
+</style>
+</head>
+<body>
+<header>
+  <h1>BLE Sensor</h1>
+  <label class="opt"><input type="checkbox" id="showAll"> show all devices</label>
+  <button id="connectBtn">Connect</button>
+  <button id="disconnectBtn" class="secondary" disabled>Disconnect</button>
+</header>
+<div id="status"><span class="dot" id="dot"></span><span id="statusText">Not connected</span></div>
+<div id="unsupported">Web Bluetooth isn't available here. Open this page in <b>Chrome on Android</b> (or desktop Chrome/Edge) over HTTPS.</div>
+
+<main>
+  <h2>Environment</h2>
+  <div class="card"><div class="label">Temperature</div><div class="value na" id="temp">—</div><div class="age" id="temp-age"></div></div>
+  <div class="card"><div class="label">Humidity</div><div class="value na" id="humi">—</div><div class="age" id="humi-age"></div></div>
+  <div class="card"><div class="label">CO₂</div><div class="value na" id="co2">—</div><div class="age" id="co2-age"></div></div>
+
+  <h2>Gas sensor (resistance)</h2>
+  <div class="card"><div class="label">NO₂</div><div class="value na" id="no2">—</div><div class="age" id="no2-age"></div></div>
+  <div class="card"><div class="label">NH₃</div><div class="value na" id="nh3">—</div><div class="age" id="nh3-age"></div></div>
+  <div class="card"><div class="label">CO</div><div class="value na" id="co">—</div><div class="age" id="co-age"></div></div>
+
+  <h2>Accelerometer</h2>
+  <div class="card wide">
+    <div class="row3">
+      <div><div class="label">X</div><div class="value na" id="ax">—</div></div>
+      <div><div class="label">Y</div><div class="value na" id="ay">—</div></div>
+      <div><div class="label">Z</div><div class="value na" id="az">—</div></div>
+    </div>
+    <div class="age" id="acc-age"></div>
+  </div>
+
+  <h2>Analog input</h2>
+  <div class="card"><div class="label">ADC (AIN5)</div><div class="value na" id="adc">—</div><div class="age" id="adc-age"></div></div>
+</main>
+<footer>Values show “—” when the matching sensor board isn't plugged in. Resistances are raw sensor Rs; ppm needs a calibrated clean-air baseline.</footer>
+
+<script>
+"use strict";
+
+const SMP_SERVICE = "8d53dc1d-1db7-4cd3-868b-8a527460aa84";
+const UUID = {
+  ess:   "environmental_sensing",
+  temp:  0x2a6e,
+  humi:  0x2a6f,
+  co2:   0x2b8c,
+  gas:   "6a510000-1234-5678-90ab-cdef01234567",
+  no2:   "6a510001-1234-5678-90ab-cdef01234567",
+  nh3:   "6a510002-1234-5678-90ab-cdef01234567",
+  co:    "6a510003-1234-5678-90ab-cdef01234567",
+  accel: "6a520000-1234-5678-90ab-cdef01234567",
+  accelC:"6a520001-1234-5678-90ab-cdef01234567",
+  adc:   "adc10000-1234-5678-90ab-cdef01234567",
+  adcC:  "adc10001-1234-5678-90ab-cdef01234567",
+};
+
+const $ = id => document.getElementById(id);
+const lastSeen = {};   // element id -> timestamp
+
+let device = null;
+let wantConnected = false;
+let reconnectTimer = null;
+
+function setStatus(text, kind) {
+  $("statusText").textContent = text;
+  $("dot").className = "dot " + (kind || "");
+}
+
+function setValue(id, text, unit) {
+  const el = $(id);
+  if (text === null) {
+    el.textContent = "—";
+    el.classList.add("na");
+    delete lastSeen[id];
+  } else {
+    el.classList.remove("na");
+    el.textContent = text;
+    if (unit) { const s = document.createElement("small"); s.textContent = unit; el.appendChild(s); }
+    lastSeen[id] = Date.now();
+  }
+}
+
+function fmtOhm(v) {
+  if (v >= 1e6) return [(v / 1e6).toFixed(2), "MΩ"];
+  if (v >= 1e3) return [(v / 1e3).toFixed(1), "kΩ"];
+  return [String(v), "Ω"];
+}
+
+// ---- Characteristic parsers (firmware units) --------------------------------
+const parsers = {
+  temp(dv) {
+    const raw = dv.getInt16(0, true);
+    raw === -32768 ? setValue("temp", null) : setValue("temp", (raw / 100).toFixed(2), "°C");
+  },
+  humi(dv) {
+    const raw = dv.getUint16(0, true);
+    raw === 0xffff ? setValue("humi", null) : setValue("humi", (raw / 100).toFixed(1), "%");
+  },
+  co2(dv) {
+    const raw = dv.getUint16(0, true);
+    raw === 0xffff ? setValue("co2", null) : setValue("co2", String(raw), "ppm");
+  },
+  gas(id) {
+    return dv => {
+      const raw = dv.getUint32(0, true);
+      if (raw === 0xffffffff) { setValue(id, null); return; }
+      const [n, u] = fmtOhm(raw);
+      setValue(id, n, u);
+    };
+  },
+  accel(dv) {
+    const v = [0, 2, 4].map(o => dv.getInt16(o, true));
+    ["ax", "ay", "az"].forEach((id, i) =>
+      v[i] === -32768 ? setValue(id, null) : setValue(id, String(v[i]), "mg"));
+    lastSeen["acc-age"] = v.includes(-32768) ? undefined : Date.now();
+  },
+  adc(dv) {
+    const text = new TextDecoder().decode(dv.buffer);
+    const m = text.match(/^(-?\d+)\s*(\w+)?/);
+    m ? setValue("adc", m[1], m[2] || "") : setValue("adc", text);
+  },
+};
+
+// ---- Subscribe to one characteristic ----------------------------------------
+async function watch(server, svcUuid, chUuid, parse, label) {
+  try {
+    const svc = await server.getPrimaryService(svcUuid);
+    const ch = await svc.getCharacteristic(chUuid);
+    ch.addEventListener("characteristicvaluechanged", e => parse(e.target.value));
+    try { parse(await ch.readValue()); } catch (e) { /* first read is optional */ }
+    await ch.startNotifications();
+  } catch (e) {
+    console.warn("Could not subscribe to " + label + ":", e);
+  }
+}
+
+async function setupDevice() {
+  setStatus("Reading services…", "busy");
+  const server = device.gatt;
+  // GATT operations are queued one at a time by the browser; keep them sequential.
+  await watch(server, UUID.ess, UUID.temp, parsers.temp, "temperature");
+  await watch(server, UUID.ess, UUID.humi, parsers.humi, "humidity");
+  await watch(server, UUID.ess, UUID.co2, parsers.co2, "CO2");
+  await watch(server, UUID.gas, UUID.no2, parsers.gas("no2"), "NO2");
+  await watch(server, UUID.gas, UUID.nh3, parsers.gas("nh3"), "NH3");
+  await watch(server, UUID.gas, UUID.co, parsers.gas("co"), "CO");
+  await watch(server, UUID.accel, UUID.accelC, parsers.accel, "accelerometer");
+  await watch(server, UUID.adc, UUID.adcC, parsers.adc, "ADC");
+  setStatus("Connected to " + (device.name || "device"), "on");
+}
+
+async function connectGatt() {
+  clearTimeout(reconnectTimer);
+  setStatus("Connecting…", "busy");
+  await device.gatt.connect();
+  await setupDevice();
+  $("connectBtn").disabled = true;
+  $("disconnectBtn").disabled = false;
+}
+
+function onDisconnected() {
+  $("disconnectBtn").disabled = !wantConnected;
+  if (!wantConnected) { setStatus("Not connected"); $("connectBtn").disabled = false; return; }
+  setStatus("Connection lost — reconnecting…", "err");
+  scheduleReconnect(1000);
+}
+
+function scheduleReconnect(delayMs) {
+  reconnectTimer = setTimeout(async () => {
+    if (!wantConnected) return;
+    try { await connectGatt(); }
+    catch (e) {
+      console.warn("Reconnect failed:", e);
+      setStatus("Reconnecting…", "err");
+      scheduleReconnect(Math.min(delayMs * 2, 8000));
+    }
+  }, delayMs);
+}
+
+async function connect() {
+  const options = {
+    optionalServices: [UUID.ess, UUID.gas, UUID.accel, UUID.adc],
+  };
+  if ($("showAll").checked) options.acceptAllDevices = true;
+  else options.filters = [{ services: [SMP_SERVICE] }];
+
+  try {
+    device = await navigator.bluetooth.requestDevice(options);
+  } catch (e) {
+    if (e.name !== "NotFoundError") setStatus("Error: " + e.message, "err");
+    else setStatus("Not connected");
+    return;
+  }
+  wantConnected = true;
+  device.addEventListener("gattserverdisconnected", onDisconnected);
+  try { await connectGatt(); }
+  catch (e) {
+    setStatus("Connect failed: " + e.message, "err");
+    scheduleReconnect(2000);
+  }
+}
+
+function disconnect() {
+  wantConnected = false;
+  clearTimeout(reconnectTimer);
+  if (device && device.gatt.connected) device.gatt.disconnect();
+  else onDisconnected();
+}
+
+// ---- "x s ago" labels -------------------------------------------------------
+setInterval(() => {
+  for (const id of ["temp", "humi", "co2", "no2", "nh3", "co", "adc"]) {
+    $(id + "-age").textContent = lastSeen[id] ? ago(lastSeen[id]) : "";
+  }
+  $("acc-age").textContent = lastSeen["acc-age"] ? ago(lastSeen["acc-age"]) : "";
+}, 1000);
+
+function ago(t) {
+  const s = Math.round((Date.now() - t) / 1000);
+  return s <= 1 ? "just now" : s + " s ago";
+}
+
+// ---- Start ------------------------------------------------------------------
+if (!navigator.bluetooth) {
+  $("unsupported").style.display = "block";
+  $("connectBtn").disabled = true;
+} else {
+  $("connectBtn").addEventListener("click", connect);
+  $("disconnectBtn").addEventListener("click", disconnect);
+}
+</script>
+</body>
+</html>
